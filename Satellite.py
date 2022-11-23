@@ -33,6 +33,7 @@ class Satellite():
         data = conn.recv(1024)
         data = data.decode('utf-8')
         conn.close()
+        socket4.close()
         split_receive = data.split(' ')
         ROUTER_PORT = int(split_receive[3])
         ROUTER_ADDRESS = split_receive[2]
@@ -57,6 +58,7 @@ def send_interest(ship_name):
             #recv_data()
             data = socket_1.recv(1024)
             print(data.decode('utf-8'))
+            socket_1.close()
         except Exception as e:
             print('Could not send acknowledgement', e)
 
@@ -92,27 +94,28 @@ def send_to_router(conn,raddr,action):
 
 
 
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--shipname', help='Which Ship do you want to communicate? Carrier/Destroyer/Cruiser', required=True)
-    args = parser.parse_args()
+def main(): 
+
     hostname = socket.gethostname()
     host = socket.gethostbyname(hostname)
     Satellite_1 = Satellite(host,MY_PORT)
     Satellite_1.broadcast()
     Satellite_1.listen_to_router()
     Ship_names=['carrier','destroyer','cruiser']
-    
-    if args.shipname.lower() not in  Ship_names:
-        print("Which Ship do you want to communicate? Carrier/Destroyer/Cruiser")
-        exit(1)
-    else:
-        ship_name = args.shipname
-        ship_name_lower = ship_name.lower()
-    
-    while True:               
+    while True:
+
+        print('Which Ship do you want to communicate? Carrier/Destroyer/Cruiser')
+        x=input()
+        if x.lower() not in  Ship_names:
+            print("Which Ship do you want to communicate? Carrier/Destroyer/Cruiser")
+            exit(1)
+        else:
+            ship_name = x
+            ship_name_lower = x.lower()
+                 
         send_interest(ship_name_lower)
-        time.sleep(10)
+
+        time.sleep(50)
 
 
 if __name__ == '__main__':
