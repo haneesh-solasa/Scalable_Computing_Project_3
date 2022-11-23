@@ -1,7 +1,6 @@
 import socket
 import threading
 import time
-import json
 
 ROUTER_PORT = 33301    # Port for listening to other peers
 BCAST_PORT = 33255     # Port for broadcasting own address
@@ -29,8 +28,10 @@ class Peer:
         return f'Node type: {self.type}, name: {self.name}, address: {self.host}:{self.port}, available actions: {self.actions}'
 
     def __eq__(self, other):
-        return self.type == other.type and self.name == other.name and self.host == other.host and self.port == other.port and self.actions == other.actions
+        return self.type == other.type and self.name == other.name and self.host == other.host and self.port == other.port
 
+    def __hash__(self):
+        return hash((self.type, self.name, self.host, self.port))
 
 class Router:
     def __init__(self, host, port, name):
@@ -72,39 +73,21 @@ class Router:
             port = int(data_message[3])
             if len(data_message) > 4:
                 unparsed_actions = data_message[4]
-                actions = unparsed_actions.split('|')
+                actions = set(unparsed_actions.split('|'))
             else:
                 actions = ''
             peer = Peer(type, name, host, port, actions)
             if peer not in self.peers:
                 self.peers.add(peer)
                 print('Known peers:', self.peers)
-                self.update_routes()
+                self.update_routes(peer)
+            else:
+                print('Known peer connected, updating actions')
+                self.peers.remove(peer)
+                self.peers.add(peer)
+                print('Currently known peers:', self.peers)
+            self.respond_to_new_node(peer)
             time.sleep(2)
-
-    def parse_interest(self, interest):
-        inter = interest.split("/")
-        return inter[len(inter)-1]
-
-    def send_interest(self, possible_peers, interest):
-        for host, port, _ in possible_peers:
-            try:
-                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                    s.connect((host, port))
-                    print(f"Sending interest to: {host}, {port}")
-                    s.send(interest.encode('UTF-8'))
-                    data = s.recv(1024)
-                    self.send_back_to_interested_nodes(data, interest)
-                    return
-            except Exception:
-                print("Exception occured, trying next peer if available")
-                pass
-        self.send_nack_for_interest(interest)
-
-    def send_nack_for_interest(self, interest):
-        nack = f'NACK {interest}'
-        for connection in pending_interests[interest]:
-            connection.send(nack.encode('UTF_8'))
 
     def receive_interests(self):
         """Listen on own port for other peer data."""
@@ -135,18 +118,41 @@ class Router:
             filtered_ips = self.filter_ips(interest)
             self.send_interest(filtered_ips, interest)
 
+    def send_interest(self, possible_peers, interest):
+        for peer in possible_peers:
+            try:
+                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                    s.connect((peer.host, peer.port))
+                    print(f"Sending interest to: {peer.host}, {peer.port}")
+                    s.send(interest.encode('utf-8'))
+                    data = s.recv(1024)
+                    self.send_back_to_interested_nodes(data, interest)
+                    return
+            except Exception:
+                print("Exception occured, trying next peer if available")
+                pass
+        self.send_nack_for_interest(interest)
+
+    def parse_interest(self, interest):
+        inter = interest.split("/")
+        return inter[len(inter)-1]
+
+    def send_nack_for_interest(self, interest):
+        nack = f'NACK {interest}'
+        for connection in pending_interests[interest]:
+            connection.send(nack.encode('UTF_8'))
+
     def send_back_to_interested_nodes(self, message, interest):
         for connection, address in pending_interests[interest]:
             print(f"Sending data for interest: {interest} back to: {address}")
-            connection.send(message.encode('UTF-8'))
+            connection.send(message.encode('utf-8'))
             connection.close()
 
     def respond_to_new_node(self, peer):
-        host, port, _ = peer
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            s.connect((host, port))
+            s.connect((peer.host, peer.port))
             address_message = f'ROUTER {self.name} {self.host} {self.port}'
-            s.send(address_message.encode('UTF-8'))
+            s.send(address_message.encode('utf-8'))
 
     def remove_node(self, node, command):
         try:
@@ -182,21 +188,17 @@ class Router:
                 continue
    """             #self.remove_node(peer,command)
 
-    def update_routes(self, route, peer):
-        if route in map_dict.keys():
-            temp_set = map_dict[route]
-            temp_set.add(peer)
-            map_dict[route] = temp_set
-        else:
-            map_dict[route] = set(peer)
+    def update_routes(self, peer):
+        for action in peer.actions:
+            route = f'{peer.name}/{action}'
+            map_dict[route] = peer
         print("Current router table state: ", map_dict)
 
 
 def main():
     hostname = socket.gethostname()
     host = socket.gethostbyname(hostname)
-    router = Router(host, ROUTER_PORT)
-
+    router = Router(host, ROUTER_PORT, 'router')
     t1 = threading.Thread(target=router.listen_to_broadcasts)
     t2 = threading.Thread(target=router.receive_interests)
     t1.start()
