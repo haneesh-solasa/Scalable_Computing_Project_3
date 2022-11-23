@@ -1,10 +1,10 @@
 import socket
 import threading
 import time
+import json
 
-
-PEER_PORT = 33301    # Port for listening to other peers
-BCAST_PORT = 33334   # Port for broadcasting own address
+ROUTER_PORT = 33301    # Port for listening to other peers
+BCAST_PORT = 33255     # Port for broadcasting own address
 INTEREST_PORT = 33310
 
 map_dict = {}
@@ -12,16 +12,32 @@ pending_interests = {}
 packet_cache = {}
 
 
-def filter_ips(data):
-    if data in map_dict.keys():
-        return map_dict[data]
+def filter_ips(route):
+    if route in map_dict.keys():
+        return map_dict[route]
 
 
 class Peer:
-    def __init__(self, host, port):
+    def __init__(self, type, name, host, port, actions):
+        self.type = type
+        self.name = name
+        self.host = host
+        self.port = port
+        self.actions = actions
+
+    def __repr__(self):
+        return f'Node type: {self.type}, name: {self.name}, address: {self.host}:{self.port}, available actions: {self.actions}'
+
+    def __eq__(self, other):
+        return self.type == other.type and self.name == other.name and self.host == other.host and self.port == other.port and self.actions == other.actions
+
+
+class Router:
+    def __init__(self, host, port, name):
         self.host = host
         self.port = port
         self.peers = set()
+        self.name = name
 
     def broadcastIP(self):
         """Broadcast the host IP."""
@@ -37,33 +53,33 @@ class Peer:
             print(f"Broadcasting my IP {self.host}:{self.port}")
             time.sleep(10)
 
-    def update_peer_list(self):
+    def listen_to_broadcasts(self):
         """Update peers list on receipt of their address broadcast."""
         client = socket.socket(socket.AF_INET, socket.SOCK_DGRAM,
                                 socket.IPPROTO_UDP)
         client.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
         client.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
         client.bind(("", BCAST_PORT))
+        print('listening to broadcasts...')
         while True:
             data, _ = client.recvfrom(1024)
             print("received message:", data.decode('utf-8'))
             data = data.decode('utf-8')
             data_message = data.split(' ')
-            command = data_message[0]
-            if command == 'HOST':
-                host = data_message[1]
-                port = int(data_message[3])
-                if len(data_message) > 5:
-                    action = data_message[5]
-                else:
-                    action = ''
-                # host = dataMessage[1]
-                # port = int(dataMessage[3])
-                peer = (host, port, action.lower())
-                if peer != (self.host, self.port, action) and peer not in self.peers:
-                    self.peers.add(peer)
-                    print('Known peers:', self.peers)
-                    self.maintain_router()
+            type = data_message[0]
+            name = data_message[1]
+            host = data_message[2]
+            port = int(data_message[3])
+            if len(data_message) > 4:
+                unparsed_actions = data_message[4]
+                actions = unparsed_actions.split('|')
+            else:
+                actions = ''
+            peer = Peer(type, name, host, port, actions)
+            if peer not in self.peers:
+                self.peers.add(peer)
+                print('Known peers:', self.peers)
+                self.update_routes()
             time.sleep(2)
 
     def parse_interest(self, interest):
@@ -125,6 +141,12 @@ class Peer:
             connection.send(message.encode('UTF-8'))
             connection.close()
 
+    def respond_to_new_node(self, peer):
+        host, port, _ = peer
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.connect((host, port))
+            address_message = f'ROUTER {self.name} {self.host} {self.port}'
+            s.send(address_message.encode('UTF-8'))
 
     def remove_node(self, node, command):
         try:
@@ -135,8 +157,9 @@ class Peer:
         except:
             print("ERROR IN REMOVING NODE")
 
-    def route_to_pi(self, peer_list, command):
-        """Send sensor data to all peers."""
+
+    """def route_to_pi(self, peer_list, command):
+        #Send sensor data to all peers.
         sent = False
         # if command == 'ALERT':
         print("What is peer list and command :{} {}".format(peer_list, command))
@@ -157,40 +180,26 @@ class Peer:
             except Exception:
                 print("An exception occured")
                 continue
-                #self.remove_node(peer,command)
+   """             #self.remove_node(peer,command)
 
-    def maintain_router(self):
-        empty_set = set()
-        count = 1
-        for peer in self.peers:
-            # print("No of iterations", count)
-            # print("Inside peer", peer)
-            host = peer[0]
-            # print("Inside host",host)
-            port = peer[1]
-            action = peer[2]
-            # print("Inside action", action)
-
-            if action in map_dict.keys():
-                temp_set = map_dict[action]
-                temp_set.add(host)
-                map_dict[action] = temp_set
-            else:
-                empty_set.add(host)
-                map_dict[action] = empty_set
-            count += 1
-        print("What is router table now", map_dict)
+    def update_routes(self, route, peer):
+        if route in map_dict.keys():
+            temp_set = map_dict[route]
+            temp_set.add(peer)
+            map_dict[route] = temp_set
+        else:
+            map_dict[route] = set(peer)
+        print("Current router table state: ", map_dict)
 
 
 def main():
     hostname = socket.gethostname()
     host = socket.gethostbyname(hostname)
-    peer = Peer(host, PEER_PORT)
+    router = Router(host, ROUTER_PORT)
 
-    t1 = threading.Thread(target=peer.update_peer_list)
-    t2 = threading.Thread(target=peer.receive_interests)
+    t1 = threading.Thread(target=router.listen_to_broadcasts)
+    t2 = threading.Thread(target=router.receive_interests)
     t1.start()
-    time.sleep(15)
     t2.start()
 
 
