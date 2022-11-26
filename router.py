@@ -3,7 +3,6 @@ import threading
 import time
 import pygtrie
 import json
-import random
 import argparse
 
 ROUTER_PORT = 33301    # Port for listening to other peers
@@ -116,7 +115,7 @@ class Router:
         if not data_message.startswith('INTEREST'):
             data_message = data_message.split(' ')
             type = data_message[0]
-            name = data_message[1]
+            name = data_message[1].lower()
             host = data_message[2]
             port = int(data_message[3])
             if len(data_message) > 4:
@@ -153,7 +152,7 @@ class Router:
                 data = data.decode('utf-8')
                 data_message = data.split(' ')
                 type = data_message[0]
-                name = data_message[1]
+                name = data_message[1].lower()
                 host = data_message[2]
                 port = int(data_message[3])
                 if len(data_message) > 4:
@@ -235,8 +234,11 @@ class Router:
                     print(f"Sending interest to: {peer.host}, {peer.port}")
                     s.send(interest.encode('utf-8'))
                     data = s.recv(1024)
-                    send_back_to_interested_nodes(data, interest)
-                    return
+                    if data.startswith('NACK'.encode()):
+                        continue
+                    else:
+                        send_back_to_interested_nodes(data, interest)
+                        return
             except Exception as e:
                 print(f"Exception occured {e}, trying next peer if available")
                 self.peers_to_delete.append(peer)
@@ -324,7 +326,7 @@ def main():
     global stop_threads
     try:
         t4.start()
-        time.sleep(2)
+        time.sleep(5)
         joining = False
         t4.join()
         t1.start()
