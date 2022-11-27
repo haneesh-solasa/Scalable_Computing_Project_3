@@ -1,22 +1,28 @@
-import argparse
 import socket
 import time
-import traceback
 import rsa
 import threading
+import argparse
+import pandas as pd
+from statsmodels.tsa.statespace.sarimax import SARIMAX
 
 ROUTER_PORT = []
 B_CAST_PORT = 33255
 ROUTER_ADDRESS = []
 ROUTER_NAME = []
 MY_PORT = 33258
-publicKey, privateKey = rsa.newkeys(512)
+
+cells = ['A1', 'A2', 'B1', 'B2']
+colour = ['GREEN', 'YELLOW', 'ORANGE', 'RED']
+codes = pd.DataFrame(columns=cells)
 
 
 class Satellite():
-    def __init__(self,host,port):
+    def __init__(self,host, port, models):
         self.host = host
         self.port = port
+        self.models = models
+        self.publicKey, self.privateKey = rsa.newkeys(1024)
     
     def broadcast(self):
         socket_0 = socket.socket(socket.AF_INET,socket.SOCK_DGRAM,socket.IPPROTO_UDP)
@@ -79,6 +85,7 @@ class Satellite():
         print("listening for interest data from Ship on:")
         print(f'{self.host}:{self.port}')
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         s.bind((self.host, self.port))
         s.listen(5)
         while True:
@@ -99,130 +106,166 @@ class Satellite():
         
         data = connection.recv(1024)
         #print(data)
-        interest = data.decode('utf-8')
-        name = interest.split(" ")
-        if name[0]== "INTEREST":
-                requirement = name[1].split("/")
-                requirement = requirement[1].lower()
-                public_key_raw = " ".join(name[2:]).encode()
+        message = data.decode('utf-8')
+        message_chunks = message.split(" ")
+        if message_chunks[0]== "INTEREST":
+                interest_chunks = message_chunks[1].split("/")
+                interest = interest_chunks[1].lower()
+                public_key_raw = " ".join(message_chunks[2:]).encode()
                 public_key_ship = rsa.PublicKey.load_pkcs1(public_key_raw)
                 #print(public_key_raw)
-                if(requirement == "ship_safety"):
+                if interest == "ship_safety":
                     print("Sending location interest to the ship")
-                    interest_type = name[1].split("/")[2] + "/location"
-                    location_ship = send_interest_ship(interest_type)
-                    if(location_ship=='NACK'):
+                    interest_route = interest_chunks[2] + "/location"
+                    location_ship = self.send_interest_ship(interest_route)
+                    if location_ship=='NACK':
                         print("None of the routers are responding")
                     else:
-                        print(location_ship)
-                        
-                        enc_data = rsa.encrypt("Data hello hello".encode(),public_key_ship)
+                        max_warn = []
+                        for cell in cells:
+                            pred = pd.DataFrame();
+                            for weather in ['Gust', 'WindS']:
+                                prediction = self.models[cell][weather].forecast(steps=5).rename(weather)
+                                pred = pd.concat([pred, prediction], axis=1)
+                            code = 0
+                            pred.reset_index(inplace=True)
+                            for k in range(len(pred)):
+                                wind = pred.loc[k, 'WindS'] - 19
+                                gust = pred.loc[k, 'Gust'] - 40
+                                codes.loc[k, cell] = max(0, wind // 8, gust // 10)
+                                code = max(code, wind // 8, gust // 10)
+                            max_warn.append(code)
+                        print(max_warn)
+                        current = max_warn[cells.index(location_ship)]
+                        best = min(max_warn)
+                        if colour[int(current)] == colour[int(best)]:
+                            message = f'DATA {message_chunks[1]} {location_ship}'
+                        else:
+                            message = f'DATA {message_chunks[1]} {cells[max_warn.index(int(best))]}'
+                        enc_data = rsa.encrypt(message.encode(), public_key_ship)
                         connection.send(enc_data)
                         connection.close()
 
 
 
-def send_interest_ship(interest_type):
-    
-    #Getting info from broadcast message from router
-    address_not_working = []
-    for i in range(len(ROUTER_ADDRESS)):
-        router_info = {(ROUTER_ADDRESS[i], ROUTER_PORT[i])}
-
-        for router in router_info:
-            try:
-                socket_1 = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                socket_1.connect(router)
-                message = 'INTEREST ' + interest_type + ' ' 
-                message=message.encode()
-                message = message + publicKey.save_pkcs1('PEM')
-                socket_1.send(message)
-                print("Interest for Location sent, waiting for location")
-                data = socket_1.recv(1024)
-                if(data.startswith('NACK'.encode())):
-                    print(data.decode('utf-8'))
-                else:
-                    decoded_data = decrypt_msg(data)
-                    print(decoded_data)
-                    split_decoded_data = decoded_data.split(" ")
-                    if(len(split_decoded_data)>1):
-                        cell = split_decoded_data[2]
-                        socket_1.close()
-                        return cell
-
-                socket_1.close()
-            
-            except Exception as e:
-                print('Exception Occured', e)
-                address_not_working.append(ROUTER_ADDRESS[i])
-    for address in address_not_working:
-        index_not_working = ROUTER_ADDRESS.index(address)
-        print("Removed Address:",ROUTER_ADDRESS[index_not_working])
-        ROUTER_ADDRESS.remove(ROUTER_ADDRESS[index_not_working])
-        ROUTER_NAME.remove(ROUTER_NAME[index_not_working])
-        ROUTER_PORT.remove(ROUTER_PORT[index_not_working])
-    return "NACK"
-
-def send_interest_buouy():
-    buouy_names = ['A1','A2','B1','B2']
-    with open("weather.csv", encoding = 'utf-8', mode='a') as f:
+    def send_interest_ship(self, interest_type):
+        
+        #Getting info from broadcast message from router
         address_not_working = []
-
         for i in range(len(ROUTER_ADDRESS)):
             router_info = {(ROUTER_ADDRESS[i], ROUTER_PORT[i])}
 
             for router in router_info:
                 try:
-                    socket_n = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                    socket_n.connect(router)
-                    for buouy in buouy_names:
-                        message = 'INTEREST ' + buouy + "/weather_summary"
+                    socket_1 = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                    socket_1.connect(router)
+                    message = 'INTEREST ' + interest_type + ' '
+                    message=message.encode()
+                    message = message + self.publicKey.save_pkcs1('PEM')
+                    socket_1.send(message)
+                    print(f"{interest_type} sent, waiting for location")
+                    data = socket_1.recv(1024)
+                    if(data.startswith('NACK'.encode())):
+                        print(data.decode('utf-8'))
+                    else:
+                        decoded_data = self.decrypt_msg(data)
+                        print(decoded_data)
+                        split_decoded_data = decoded_data.split(" ")
+                        if(len(split_decoded_data)>1):
+                            cell = split_decoded_data[2]
+                            socket_1.close()
+                            return cell
+
+                    socket_1.close()
+
+                except Exception as e:
+                    print('Exception Occured', e)
+                    address_not_working.append(ROUTER_ADDRESS[i])
+        for address in address_not_working:
+            index_not_working = ROUTER_ADDRESS.index(address)
+            print("Removed Address:",ROUTER_ADDRESS[index_not_working])
+            ROUTER_ADDRESS.remove(ROUTER_ADDRESS[index_not_working])
+            ROUTER_NAME.remove(ROUTER_NAME[index_not_working])
+            ROUTER_PORT.remove(ROUTER_PORT[index_not_working])
+        return "NACK"
+
+    def send_interest_buouy(self):
+        buouy_names = cells
+        address_not_working = []
+        for i in range(len(ROUTER_ADDRESS)):
+            router_info = {(ROUTER_ADDRESS[i], ROUTER_PORT[i])}
+
+            for router in router_info:
+                try:
+                    for buoy in buouy_names:
+                        socket_n = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                        socket_n.connect(router)
+                        message = 'INTEREST ' + buoy + "/weather_summary"
                         message = message.encode()
                         socket_n.send(message)
-                        print("Interest for weather sent, waiting for weather info from buoy", buouy)
-                        data_received=socket_n.recv(1024)
+                        print("Interest for weather sent, waiting for weather info from buoy", buoy)
+                        data_received=socket_n.recv(2048)
+                        print(data_received)
                         if(data_received.startswith('NACK'.encode())):
                             print(data_received.decode('utf-8'))
                         else:
                             data_decoded = data_received.decode('utf-8')
                             data_decoded_split = data_decoded.split(" ")[2]
-                            f.write(data_decoded_split)
+                            print(data_decoded_split.split(','))
+                            wind = data_decoded_split.split(',')[5]
+                            gust = data_decoded_split.split(',')[6]
+                            self.models[buoy]['Gust'] = self.models[buoy]['Gust'].append([float(gust)])
+                            self.models[buoy]['WindS'] = self.models[buoy]['WindS'].append([float(wind)])
+                        socket_n.close()
                 except Exception as e:
-                    print('Exception Occured', e)
+                    print(f'Exception Occured {e}')
                     address_not_working.append(ROUTER_ADDRESS[i])
-    for address in address_not_working:
-        index_not_working = ROUTER_ADDRESS.index(address)
-        print("Removed Address:",ROUTER_ADDRESS[index_not_working])
-        ROUTER_ADDRESS.remove(ROUTER_ADDRESS[index_not_working])
-        ROUTER_NAME.remove(ROUTER_NAME[index_not_working])
-        ROUTER_PORT.remove(ROUTER_PORT[index_not_working])
-    return "NACK"
+        for address in address_not_working:
+            index_not_working = ROUTER_ADDRESS.index(address)
+            print("Removed Address:",ROUTER_ADDRESS[index_not_working])
+            ROUTER_ADDRESS.remove(ROUTER_ADDRESS[index_not_working])
+            ROUTER_NAME.remove(ROUTER_NAME[index_not_working])
+            ROUTER_PORT.remove(ROUTER_PORT[index_not_working])
+        return "NACK"
 
 
                 
 
 
-def decrypt_msg(msg):
-    decoded_data = rsa.decrypt(msg,privateKey).decode()
-    return decoded_data
+    def decrypt_msg(self, msg):
+        decoded_data = rsa.decrypt(msg, self.privateKey).decode()
+        return decoded_data
         
 
-def check_weather():
-    while True:
-        send_interest_buouy()
-        time.sleep(10)
+    def check_weather(self):
+        while True:
+            self.send_interest_buouy()
+            time.sleep(10)
 
 def main(): 
 
+    weather22 = pd.read_csv("2022.csv", header=0)
+    weather22 = weather22[(weather22['D'] >= 50) & (weather22['D'] < 70)]
+    models = {}
+    for i in cells:
+        data22 = weather22.loc[weather22['ID'] == i, ['WindS', 'Gust', 'Code']]
+        data = data22
+        data = data.dropna()
+        data.reset_index(drop=True, inplace=True)
+        models[i] = {}
+        for j in ['Gust', 'WindS']:
+            print(f'Running {i} {j}')
+            mod = SARIMAX(data[j], order=(0, 1, 2), seasonal_order=(1, 0, 1, 6))
+            res = mod.fit()
+            models[i][j] = res
     hostname = socket.gethostname()
     host = socket.gethostbyname(hostname)
-    Satellite_1 = Satellite(host,MY_PORT)
-
-
-    t1 = threading.Thread(target = Satellite_1.broadcast)
-    t2 = threading.Thread(target = Satellite_1.listen_to_router_addr)
-    t3 = threading.Thread(target=check_weather)
-    t4 = threading.Thread(target = Satellite_1.receive_interest_router)
+    Satellite_1 = Satellite(host, MY_PORT, models)
+    a = input('waiting...')
+    t1 = threading.Thread(target=Satellite_1.broadcast)
+    t2 = threading.Thread(target=Satellite_1.listen_to_router_addr)
+    t3 = threading.Thread(target=Satellite_1.check_weather)
+    t4 = threading.Thread(target=Satellite_1.receive_interest_router)
 
     t1.start()
     t2.start()

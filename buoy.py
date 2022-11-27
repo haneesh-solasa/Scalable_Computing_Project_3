@@ -19,13 +19,14 @@ class Buoy:
         self.port = port
         self.name = name
         self.weather_data = open(f'{name}.csv', 'r')
+        self.weather_data.readline()
 
     def broadcast(self):
         print("code inside broadcast")
         sock = socket.socket(socket.AF_INET,socket.SOCK_DGRAM,socket.IPPROTO_UDP)
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
-        message = f'BUOY A1 {self.host} {self.port} weather_summary|AirTemp|SeaTemp|Humidity|WindSpeed|Gust'.encode('utf-8')
+        message = f'BUOY {self.name} {self.host} {self.port} weather_summary|AirTemp|SeaTemp|Humidity|WindSpeed|Gust'.encode('utf-8')
         print("sending Buoy details to the router")
 
        # print(True)
@@ -40,6 +41,7 @@ class Buoy:
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         s.bind((self.host, self.port))
         s.listen(5)
+        print('waiting for router')
         while True:
             conn, _ = s.accept()
             data = conn.recv(1024)
@@ -57,17 +59,19 @@ class Buoy:
     
 
     def receiveInterestRouter(self,socket):
+        print('listening to interest')
         while True:
             conn, _ = socket.accept()
             data = conn.recv(1024)
             data = data.decode('utf-8')
+            print(data)
             name = data.split(" ")
             if (name[0]== "INTEREST"):
                 requirement = name[1].split("/")
                 requirement = requirement[1]
                 line = self.weather_data.readline()
                 if requirement == "weather_summary":
-                    message = f'DATA A1 {line}'
+                    message = f'DATA {self.name} {line}'
                     print(f"send this info {message}")
                     conn.send(message.encode())
                     conn.close()

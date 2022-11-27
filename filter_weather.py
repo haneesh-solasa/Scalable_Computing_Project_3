@@ -8,6 +8,7 @@ def main():
     name = args.name
     weather = pd.read_csv('2022.csv')
     filtered_weather = weather[weather['ID'] == name]
+    filtered_weather = filtered_weather[filtered_weather['D'] >= 70]
     filtered_weather.to_csv(f'{name}.csv', index=False)
 
 if __name__ == '__main__':

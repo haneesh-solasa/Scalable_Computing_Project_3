@@ -35,7 +35,7 @@ class Ship:
         self.location = location
         self.actions = actions
         self.routers = set()
-        public_key, private_key = rsa.newkeys(2048)
+        public_key, private_key = rsa.newkeys(1024)
         self.public_key = public_key
         self.private_key = private_key
 
@@ -45,10 +45,11 @@ class Ship:
                                 socket.IPPROTO_UDP)
         s.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
         actions = '|'.join(self.actions)
-        message = f'SHIP {self.name} {self.host} {self.port} actions'.encode('utf-8')
+        message = f'SHIP {self.name} {self.host} {self.port} {actions}'.encode('utf-8')
         print("Joining network with message: ", message)
         s.sendto(message, ('<broadcast>', BCAST_PORT))
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s2:
+            s2.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             s2.bind((self.host, self.port))
             s2.listen(5)
             s2.settimeout(2)
@@ -98,7 +99,7 @@ class Ship:
                 if type == 'ROUTER':
                     router = Router(name, host, port)
                     self.routers.add(router)
-                    self.respond_to_new_router()
+                    self.respond_to_new_router(router)
             except TimeoutError:
                 pass
             except KeyboardInterrupt:
@@ -122,6 +123,7 @@ class Ship:
         print("listening for interest data")
         print(f'{self.host}:{self.port}')
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         s.bind((self.host, self.port))
         s.listen(5)
         while True:
@@ -142,6 +144,7 @@ class Ship:
         print("addr: ", address[0])
         raw_data = connection.recv(1024)
         data = raw_data.decode('utf-8')
+        print(f'received interest {data}')
         if data.startswith('INTEREST'):
             interest_parts = data.split(' ')
             route = interest_parts[1].split('/')[1]
@@ -154,7 +157,7 @@ class Ship:
                 self.send_NACK(connection, route)
 
     def send_location(self, connection, public_key):
-        message = f'DATA {self.name}/location {self.location_x} {self.location_y}'.encode()
+        message = f'DATA {self.name}/location {self.location}'.encode()
         encrypted_message = rsa.encrypt(message, public_key)
         connection.send(encrypted_message)
         connection.close()
@@ -169,7 +172,7 @@ class Ship:
         message = f'INTEREST {route} '.encode()
         message_with_pk = message + self.public_key.save_pkcs1('PEM')
         for router in self.routers:
-            with socket.socker(socket.AF_INET, socket.SOCK_STREAM) as s:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                 try:
                     s.connect((router.host, router.port))
                     print(f'Sending interest {message} to router {router.name}')
@@ -188,10 +191,10 @@ class Ship:
         self.remove_routers(routers_to_delete)
 
     def process_interest_response(self, data):
-        decoded_data = rsa.decrypt(data, self.private_key)
-        message_parts = decoded_data.split(' ')
+        decrypted_data = rsa.decrypt(data, self.private_key)
+        message_parts = decrypted_data.decode('utf-8').split(' ')
         print(message_parts[2])
-        #change_location
+        self.location = message_parts[2]
         pass
 
 
@@ -205,7 +208,7 @@ class Ship:
 
     def check_safety(self):
         while True:
-            self.send_interest('Satellite1/ship_safety')
+            self.send_interest(f'Satellite1/ship_safety/{self.name}')
             time.sleep(10)
 
 def main():

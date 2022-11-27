@@ -3,6 +3,7 @@ import threading
 import time
 import pygtrie
 import json
+import random
 import argparse
 
 ROUTER_PORT = 33301    # Port for listening to other peers
@@ -188,15 +189,16 @@ class Router:
         print("listening for interest data")
         print(f'{self.host}:{self.port}')
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         s.bind((self.host, self.port))
         s.listen(5)
         global stop_threads
         while not stop_threads:
             try:
                 conn, addr = s.accept()
+                print(f'new connection from {addr}')
                 connection_thread = threading.Thread(target=self.process_interest_connection, args=(conn, addr))
                 connection_thread.start()
-                time.sleep(1)
             except TimeoutError:
                 pass
             except Exception as e:
@@ -210,7 +212,7 @@ class Router:
         data = connection.recv(1024)
         interest = data.decode('utf-8')
         if interest.startswith('INTEREST'):
-            route = interest.split(' ')[1]
+            route = interest.split(' ')[1].lower()
             print(f"Received interest: {interest}")
             if route.startswith('peers'):
                 self.return_peers(connection)
@@ -229,16 +231,13 @@ class Router:
         for peer in possible_peers:
             try:
                 with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                    s.settimeout(5)
+                    s.settimeout(10)
                     s.connect((peer.host, peer.port))
                     print(f"Sending interest to: {peer.host}, {peer.port}")
                     s.send(interest.encode('utf-8'))
                     data = s.recv(1024)
-                    if data.startswith('NACK'.encode()):
-                        continue
-                    else:
-                        send_back_to_interested_nodes(data, interest)
-                        return
+                    send_back_to_interested_nodes(data, interest)
+                    return
             except Exception as e:
                 print(f"Exception occured {e}, trying next peer if available")
                 self.peers_to_delete.append(peer)
@@ -326,7 +325,7 @@ def main():
     global stop_threads
     try:
         t4.start()
-        time.sleep(5)
+        time.sleep(2)
         joining = False
         t4.join()
         t1.start()
