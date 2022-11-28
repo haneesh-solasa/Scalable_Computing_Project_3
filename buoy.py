@@ -49,12 +49,9 @@ class Buoy:
                 data = conn.recv(1024)
                 data = data.decode('utf-8')
                 split_receive = data.split(' ')
-                print(data)
                 ROUTER_NAME.append(split_receive[1])
                 ROUTER_PORT.append(int(split_receive[3]))
                 ROUTER_ADDRESS.append(split_receive[2])
-                address_message = "35 degree from carrier"
-                conn.send(address_message.encode('UTF-8'))
                 conn.close()
                 time.sleep(1)
             except socket.timeout as e:
@@ -80,8 +77,8 @@ class Buoy:
             conn, _ = s.accept()
             data = conn.recv(1024)
             data = data.decode('utf-8')
-            print(data)
             name = data.split(" ")
+            print('interest received')
             if (name[0]== "INTEREST"):
                 requirement = name[1].split("/")
                 requirement = requirement[1]
@@ -142,7 +139,6 @@ class Buoy:
                 self.respond_to_new_node(host, port)
             else:
                 continue
-        print(ROUTER_ADDRESS[1])
 
 def main():
     hostname = socket.gethostname()
@@ -151,9 +147,7 @@ def main():
     parser.add_argument('--name', type=str)
     args=parser.parse_args()
     name = args.name
-    print(host)
     node = Buoy(host,Ship_Port,name)
-    print(host)
     t1 = threading.Thread(target=node.broadcast)
     t1.start()
     t2 = threading.Thread(target=node.receiveRouterDetails)

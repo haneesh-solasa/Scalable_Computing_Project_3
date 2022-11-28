@@ -20,6 +20,9 @@ class Router:
     def __repr__(self):
         return f'Router: {self.name} {self.host}:{self.port}'
 
+    def __str__(self):
+        return f'Router: {self.name}'
+
     def __eq__(self, other):
         return self.host == other.host and self.port == other.port
 
@@ -46,7 +49,7 @@ class Ship:
         s.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
         actions = '|'.join(self.actions)
         message = f'SHIP {self.name} {self.host} {self.port} {actions}'.encode('utf-8')
-        print("Joining network with message: ", message)
+        print("Joining network")
         s.sendto(message, ('<broadcast>', BCAST_PORT))
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s2:
             s2.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -89,7 +92,7 @@ class Ship:
         while True:
             try:
                 data, _ = client.recvfrom(1024)
-                print("received message:", data.decode('utf-8'))
+                print("received advertisement")
                 data = data.decode('utf-8')
                 data_message = data.split(' ')
                 type = data_message[0]
@@ -121,7 +124,6 @@ class Ship:
 
     def listen_to_interests(self):
         print("listening for interest data")
-        print(f'{self.host}:{self.port}')
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         s.bind((self.host, self.port))
@@ -129,7 +131,7 @@ class Ship:
         while True:
             try:
                 conn, addr = s.accept()
-                connection_thread = threading.Thread(target=self.process_interest_connection, args=(conn, addr))
+                connection_thread = threading.Thread(target=self.process_interest_connection, args=[conn])
                 connection_thread.start()
                 time.sleep(1)
             except TimeoutError:
@@ -140,11 +142,9 @@ class Ship:
         print('Closing')
         s.close()
 
-    def process_interest_connection(self, connection, address):
-        print("addr: ", address[0])
+    def process_interest_connection(self, connection):
         raw_data = connection.recv(1024)
         data = raw_data.decode('utf-8')
-        print(f'received interest {data}')
         if data.startswith('INTEREST'):
             interest_parts = data.split(' ')
             route = interest_parts[1].split('/')[1]

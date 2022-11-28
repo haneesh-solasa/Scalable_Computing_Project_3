@@ -70,6 +70,9 @@ class Peer:
     def __repr__(self):
         return f'Node type: {self.type}, name: {self.name}, address: {self.host}:{self.port}, available actions: {self.actions}'
 
+    def __str__(self):
+        return f'Node type: {self.type}, name: {self.name}, port: {self.port}, available actions: {self.actions}'
+
     def __eq__(self, other):
         return self.type == other.type and self.name == other.name and self.host == other.host and self.port == other.port
 
@@ -93,7 +96,7 @@ class Router:
                                 socket.IPPROTO_UDP)
         s.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
         message = f'ROUTER {self.name} {self.host} {self.port}'.encode('utf-8')
-        print("Joining network with message: ", message)
+        print("Joining network")
         s.sendto(message, ('<broadcast>', BCAST_PORT))
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s2:
             s2.bind((self.host, self.port))
@@ -149,7 +152,7 @@ class Router:
         while not stop_threads:
             try:
                 data, _ = client.recvfrom(1024)
-                print("received message:", data.decode('utf-8'))
+                print("received join message")
                 data = data.decode('utf-8')
                 data_message = data.split(' ')
                 type = data_message[0]
@@ -187,7 +190,6 @@ class Router:
     def receive_interests(self):
         """Listen on own port for other peer data."""
         print("listening for interest data")
-        print(f'{self.host}:{self.port}')
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         s.bind((self.host, self.port))
@@ -196,7 +198,7 @@ class Router:
         while not stop_threads:
             try:
                 conn, addr = s.accept()
-                print(f'new connection from {addr}')
+                print(f'new connection')
                 connection_thread = threading.Thread(target=self.process_interest_connection, args=(conn, addr))
                 connection_thread.start()
             except TimeoutError:
@@ -208,7 +210,6 @@ class Router:
         s.close()
 
     def process_interest_connection(self, connection, address):
-        print("addr: ", address[0])
         data = connection.recv(1024)
         interest = data.decode('utf-8')
         if interest.startswith('INTEREST'):
@@ -233,7 +234,7 @@ class Router:
                 with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                     s.settimeout(10)
                     s.connect((peer.host, peer.port))
-                    print(f"Sending interest to: {peer.host}, {peer.port}")
+                    print(f"Sending interest to: {peer.name}")
                     s.send(interest.encode('utf-8'))
                     data = s.recv(1024)
                     send_back_to_interested_nodes(data, interest)
