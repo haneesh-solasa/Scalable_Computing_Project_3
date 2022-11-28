@@ -38,7 +38,7 @@ class Satellite():
         socket4 = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         hostname = socket.gethostname()
         host = socket.gethostbyname(hostname)
-        print("Listening to Router Address on ", self.host + ':' + str(MY_PORT))
+        print("Listening to Router Address on ", + str(MY_PORT))
         socket4.bind((self.host,MY_PORT))
         socket4.listen(5)
         conn ,_ = socket4.accept()
