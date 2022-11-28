@@ -68,7 +68,7 @@ class Peer:
         self.actions = actions
 
     def __repr__(self):
-        return f'Node type: {self.type}, name: {self.name}, address: {self.host}:{self.port}, available actions: {self.actions}'
+        return f'Node type: {self.type}, name: {self.name}, port: {self.port}, available actions: {self.actions}'
 
     def __str__(self):
         return f'Node type: {self.type}, name: {self.name}, port: {self.port}, available actions: {self.actions}'

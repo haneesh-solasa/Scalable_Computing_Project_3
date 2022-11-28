@@ -67,7 +67,7 @@ class Ship:
                     pass
         s.close()
 
-    def process_join_response(self, connection):
+    def process_join_response(self, c   onnection):
         data = connection.recv(1024)
         data_message = data.decode('utf-8')
         if not data_message.startswith('INTEREST'):
