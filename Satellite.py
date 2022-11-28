@@ -51,7 +51,7 @@ class Satellite():
         ROUTER_ADDRESS.append(split_receive[2])
         ROUTER_NAME.append(split_receive[1])
         print("Received Router Port ",ROUTER_PORT[0])
-        print("Received Router Address ",ROUTER_ADDRESS[0])
+        #print("Received Router Address ",ROUTER_ADDRESS[0])
         print("Received Router Name ",ROUTER_NAME[0])
 
     def listen_broadcasting(self):
@@ -76,14 +76,14 @@ class Satellite():
                 ROUTER_PORT.append(int(port))
                 ROUTER_NAME.append(name)
                 new_router = True
-                print("New Router Joined with Address:", ROUTER_ADDRESS )
+                print("New Router Joined with Name:", ROUTER_NAME )
             else:
                 continue
 
     def receive_interest_router(self):
         """Listen on own port for Ship Data"""
         print("listening for interest data from Ship on:")
-        print(f'{self.host}:{self.port}')
+        print(f'{self.port}')
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         s.bind((self.host, self.port))
@@ -222,7 +222,7 @@ class Satellite():
                     address_not_working.append(ROUTER_ADDRESS[i])
         for address in address_not_working:
             index_not_working = ROUTER_ADDRESS.index(address)
-            print("Removed Address:",ROUTER_ADDRESS[index_not_working])
+            print("Removed Address of the Router:",ROUTER_NAME[index_not_working])
             ROUTER_ADDRESS.remove(ROUTER_ADDRESS[index_not_working])
             ROUTER_NAME.remove(ROUTER_NAME[index_not_working])
             ROUTER_PORT.remove(ROUTER_PORT[index_not_working])
