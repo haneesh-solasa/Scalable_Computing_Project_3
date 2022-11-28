@@ -205,13 +205,13 @@ class Satellite():
                         socket_n.send(message)
                         print("Interest for weather sent, waiting for weather info from buoy", buoy)
                         data_received=socket_n.recv(2048)
-                        print(data_received)
+                        #print(data_received)
                         if(data_received.startswith('NACK'.encode())):
                             print(data_received.decode('utf-8'))
                         else:
                             data_decoded = data_received.decode('utf-8')
                             data_decoded_split = data_decoded.split(" ")[2]
-                            print(data_decoded_split.split(','))
+                            #print(data_decoded_split.split(','))
                             wind = data_decoded_split.split(',')[5]
                             gust = data_decoded_split.split(',')[6]
                             self.models[buoy]['Gust'] = self.models[buoy]['Gust'].append([float(gust)])
@@ -244,8 +244,8 @@ class Satellite():
 
 def main(): 
 
-    weather22 = pd.read_csv("2022.csv", header=0)
-    weather22 = weather22[(weather22['D'] >= 50) & (weather22['D'] < 70)]
+    weather22 = pd.read_csv("2022_2.csv", header=0)
+    weather22 = weather22[weather22['D'] < 48]
     models = {}
     for i in cells:
         data22 = weather22.loc[weather22['ID'] == i, ['WindS', 'Gust', 'Code']]

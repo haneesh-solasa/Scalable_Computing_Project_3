@@ -10,7 +10,7 @@ Ship_Port = 33256
 ROUTER_PORT = []
 ROUTER_ADDRESS = []
 ROUTER_NAME = []
-
+joining = True
 
 
 class Buoy:
@@ -41,27 +41,43 @@ class Buoy:
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         s.bind((self.host, self.port))
         s.listen(5)
+        s.settimeout(1)
         print('waiting for router')
-        while True:
-            conn, _ = s.accept()
-            data = conn.recv(1024)
-            data = data.decode('utf-8')
-            split_receive = data.split(' ')            
-            print(data)
-            ROUTER_NAME.append(split_receive[1])
-            ROUTER_PORT.append(int(split_receive[3]))
-            ROUTER_ADDRESS.append(split_receive[2])            
-            address_message = "35 degree from carrier"
-            conn.send(address_message.encode('UTF-8'))
-            conn.close()
-            time.sleep(1)    
-            self.receiveInterestRouter(s)
+        while joining:
+            try:
+                conn, _ = s.accept()
+                data = conn.recv(1024)
+                data = data.decode('utf-8')
+                split_receive = data.split(' ')
+                print(data)
+                ROUTER_NAME.append(split_receive[1])
+                ROUTER_PORT.append(int(split_receive[3]))
+                ROUTER_ADDRESS.append(split_receive[2])
+                address_message = "35 degree from carrier"
+                conn.send(address_message.encode('UTF-8'))
+                conn.close()
+                time.sleep(1)
+            except socket.timeout as e:
+                pass
+        s.close()
+
+    def respond_to_new_node(self, host, port):
+        time.sleep(1.5)
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.connect((host, port))
+            address_message = f'BUOY {self.name} {self.host} {self.port} weather_summary|AirTemp|SeaTemp|Humidity|WindSpeed|Gust'.encode('utf-8')
+            s.send(address_message)
     
 
-    def receiveInterestRouter(self,socket):
+    def receiveInterestRouter(self):
+        time.sleep(2)
         print('listening to interest')
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        s.bind((self.host, self.port))
+        s.listen(5)
         while True:
-            conn, _ = socket.accept()
+            conn, _ = s.accept()
             data = conn.recv(1024)
             data = data.decode('utf-8')
             print(data)
@@ -111,8 +127,7 @@ class Buoy:
         client.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
         client.bind(("",Broad_Port))
         print('listening to broadcasts:')
-        new_router = False
-        while new_router == False:
+        while True:
             data,_ = client.recvfrom(1024)
             data = data.decode('utf-8')
             data_message = data.split(' ')
@@ -124,7 +139,7 @@ class Buoy:
                 ROUTER_ADDRESS.append(host)
                 ROUTER_PORT.append(int(port))
                 ROUTER_NAME.append(name)
-                new_router = True
+                self.respond_to_new_node(host, port)
             else:
                 continue
         print(ROUTER_ADDRESS[1])
@@ -139,9 +154,14 @@ def main():
     print(host)
     node = Buoy(host,Ship_Port,name)
     print(host)
-    node.broadcast()
-    node.receiveRouterDetails()
-    
+    t1 = threading.Thread(target=node.broadcast)
+    t1.start()
+    t2 = threading.Thread(target=node.receiveRouterDetails)
+    t2.start()
+    global joining
+    time.sleep(5)
+    joining = False
+    node.receiveInterestRouter()
 
 
 if __name__ == '__main__':
