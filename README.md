@@ -2,6 +2,8 @@
 
 **Every process should be run on seperate Pis**
 
+Step 0: Install the required packages using `python3 -m pip install -r requirements.txt`. The statsmodels package can take a long time to install, for me it took around 4 hours to install on the pi, so be patient.
+
 Step 1: Run the Satellite.py `python3 Satellite.py` to start training the model, the program waits for the user to input. The user has to wait until the router is started and the training is complete. When the training is done, the satellite will print out a "waiting..." message, at which point any key press will activate it. It's best to activate the satellite after all 4 buoys are started, but that's not required.
 
 Step 2: Run Router.py `python3 router.py --name router1` to start listening to the broadcasts.
