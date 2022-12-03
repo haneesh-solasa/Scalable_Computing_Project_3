@@ -1,0 +1,5 @@
+numpy==1.23.4
+pandas==1.5.2
+pygtrie==2.5.0
+rsa==4.9
+statsmodels==0.13.5
