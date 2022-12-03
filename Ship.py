@@ -193,8 +193,12 @@ class Ship:
     def process_interest_response(self, data):
         decrypted_data = rsa.decrypt(data, self.private_key)
         message_parts = decrypted_data.decode('utf-8').split(' ')
-        print(message_parts[2])
-        self.location = message_parts[2]
+        location = message_parts[2]
+        if location != self.location:
+            print(f'Moving to {location}')
+        else:
+            print(f'Staying in {location}')
+        self.location = location
         pass
 
 
